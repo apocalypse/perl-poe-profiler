@@ -1,0 +1,113 @@
+-- Possible profiler output lines
+ENTERSTATE	current_session_id	statename	caller_session_id	caller_file_name	caller_file_line	time
+LEAVESTATE	current_session_id	statename	time
+FAILSTATE	current_session_id	statename	caller_session_id	caller_file_name	caller_file_line	time
+DEFAULTSTATE	current_session_id	statename	caller_session_id	caller_file_name	caller_file_line	time
+
+YIELD	current_session_id	statename	yield_event	file	line	time
+POST	current_session_id	statename	post_session	post_event	file	line	time
+CALL	current_session_id	statename	call_session	call_event	file	line	time
+
+STARTPROGRAM	name	time
+ENDPROGRAM	time wall user system cuser csystem
+
+SESSIONALIAS session_id alias file line time
+
+SESSIONNEW session_id parent_id file line time
+SESSIONDIE session_id time
+
+ALARMSET session_id event_name time_alarm file line time
+DELAYSET session_id event_name time_alarm file line time
+
+SIGNAL session_id dest_id signal file line time
+
+GC session_id time
+
+-- A state can do them
+Kernel::signal
+Kernel::yield
+Kernel::post
+Kernel::call
+
+-- Old style alarms
+Kernel::alarm
+Kernel::alarm_add
+Kernel::delay
+Kernel::delay_add
+
+-- New style alarms
+Kernel::alarm_set
+Kernel::alarm_remove
+Kernel::alarm_adjust
+Kernel::delay_set
+Kernel::delay_adjust
+Kernel::alarm_remove_all
+
+-- Alias set methods
+Kernel::alias_set
+Kernel::alias_remove
+
+-- Hooks in the Kernel just before sending stuff
+Kernel::_invoke_state		# Kernel get a signal!
+Kernel::_dispatch_event		# Kernel sends out events
+Session::_invoke_state		# Session gets an event to process
+
+-- Pretty complicated here, not straightforward...
+NFA::_invoke_state		# NFA session gets an event to process
+
+-- How to replace subroutine
+package Foo;
+sub bar { print "Original Foo::bar\n"; }
+
+package main;
+
+sub switcheroo {
+    my ($pkg, $func) = @_;
+
+    my $old_ref = do {
+        no strict 'refs';
+        \&{"$pkg\::$func"};
+    };
+
+    my $new_ref = sub {
+        print "New $func\n";
+        $old_ref->();
+    };
+
+    {
+        no strict 'refs';
+        *{"$pkg\::$func"} = $new_ref;
+    }
+}
+
+Foo::bar();
+switcheroo("Foo", "bar");
+Foo::bar();
+
+You may also want to use goto &$old_ref in case the original sub wanted to look at caller.
+blokhead
+
+
+-- Remember:
+	In Session.pm _invoke_state
+
+	It's possible to get redirected to _default or whatnot
+	so the Profiler must "reach" in and check if the transition will happen or not
+
+
+-- Useful end of program info
+# Get the memory footprint
+open( MEMORY, '/proc/self/status' ) or die 'Unable to open memory file';
+while ( <MEMORY> ) {
+	print;
+}
+close( MEMORY );
+
+my ($wall, $user, $system, $cuser, $csystem) = ( (time-$^T), times() );
+printf( ( "--- times ---\n" .
+	"wall : %9.3f\n" .
+	"user : %9.3f  cuser: %9.3f\n" .
+	"sys  : %9.3f  csys : %9.3f\n"
+	),
+	$wall, $user, $cuser, $system, $csystem,
+);
